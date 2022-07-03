@@ -3,21 +3,23 @@ use bevy_inspector_egui::WorldInspectorPlugin;
 use bevy_kira_audio::{Audio, AudioPlugin};
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 
-mod menu;
+mod bloodfield;
+mod main_menu;
 
 fn main() {
     let mut app = App::new();
 
     app.insert_resource(Msaa { samples: 4 })
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
-        .add_startup_system(setup_camera)
-        .add_startup_system(menu::spawn_circle_of_cubes)
         .add_plugins(DefaultPlugins)
         .add_plugin(AudioPlugin)
+        .add_plugin(bloodfield::BloodfieldPlugin)
         .add_plugin(DebugLinesPlugin::with_depth_test(true))
         .add_plugin(WorldInspectorPlugin::new())
-        .add_system(menu::sys_rotate_cube)
-        .add_system(menu::draw_random_lines);
+        .add_startup_system(setup_camera)
+        .add_startup_system(main_menu::spawn_circle_of_cubes)
+        .add_system(main_menu::sys_rotate_cube)
+        .add_system(main_menu::draw_random_lines);
 
     app.run();
 }

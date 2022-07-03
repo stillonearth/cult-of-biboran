@@ -8,6 +8,7 @@ bevy-inspector-egui = "0.11"
 bevy_prototype_debug_lines = { version = "0.7", features = ["3d"] }
 rand = "0.8.5"
 bevy_tweening = "0.4.0"
+bytes = "1.1.0"
 
 [dependencies.bevy]
 version = "0.7"

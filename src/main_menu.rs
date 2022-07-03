@@ -2,6 +2,7 @@ use bevy::{prelude::*, text::Text2dBounds};
 use bevy_kira_audio::{Audio, AudioPlugin};
 use bevy_prototype_debug_lines::DebugLines;
 
+use crate::bloodfield::*;
 use rand::Rng;
 
 #[derive(Component, Default)]
@@ -21,6 +22,7 @@ pub fn spawn_circle_of_cubes(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut bmaterials: ResMut<Assets<BloodfieldMaterial>>,
     asset_server: Res<AssetServer>,
     audio: Res<Audio>,
 ) {
@@ -49,9 +51,32 @@ pub fn spawn_circle_of_cubes(
 
     image_transform.rotate(Quat::from_rotation_y(std::f32::consts::PI / 2.0));
 
-    let bundle = PbrBundle {
+    let bloodfield_material = bmaterials.add(BloodfieldMaterial {
+        time: 0.0,
+        seed: rand::thread_rng().gen::<i16>() as f32,
+    });
+
+    let bundle = MaterialMeshBundle {
         mesh: mesh.clone(),
+        // material: bloodfield_material,
         material: red_material_handle,
+        transform: image_transform,
+        ..default()
+    };
+
+    commands.spawn_bundle(bundle);
+
+    // spawn background shader mesh
+
+    let mut image_transform = Transform::from_translation(Vec3::new(-5.5, 0.0, 0.0))
+        .with_scale(Vec3::new(25.0, 0.0, 25.0));
+
+    image_transform.rotate(Quat::from_rotation_y(std::f32::consts::PI / 2.0));
+
+    let bundle = MaterialMeshBundle {
+        mesh: mesh.clone(),
+        material: bloodfield_material,
+        // material: red_material_handle,
         transform: image_transform,
         ..default()
     };
