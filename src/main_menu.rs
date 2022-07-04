@@ -1,15 +1,19 @@
-use bevy::{prelude::*, text::Text2dBounds};
-use bevy_kira_audio::{Audio, AudioPlugin};
+use bevy::prelude::*;
+use bevy_kira_audio::Audio;
 use bevy_prototype_debug_lines::DebugLines;
 
 use crate::bloodfield::*;
 use rand::Rng;
+
+// Components
 
 #[derive(Component, Default)]
 pub struct Cube;
 
 #[derive(Component, Default)]
 pub struct Pentagram;
+
+// Bundles
 
 #[derive(Bundle, Default)]
 struct CubeBundle {
@@ -18,7 +22,24 @@ struct CubeBundle {
     cube: Cube,
 }
 
-pub fn spawn_circle_of_cubes(
+// Systems
+
+fn sys_setup_camera(mut commands: Commands) {
+    let mut camera_transform = Transform::from_matrix(Mat4::from_rotation_translation(
+        Quat::from_xyzw(-0.3, -0.5, -0.3, 0.5).normalize(),
+        Vec3::new(-10.0, 18.0, 0.0),
+    ));
+
+    camera_transform.scale.z = 1.5;
+
+    // Camera
+    commands.spawn_bundle(PerspectiveCameraBundle {
+        transform: camera_transform,
+        ..Default::default()
+    });
+}
+
+pub fn sys_spawn_circle_of_cubes(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -26,12 +47,6 @@ pub fn spawn_circle_of_cubes(
     asset_server: Res<AssetServer>,
     audio: Res<Audio>,
 ) {
-    // commands.spawn_bundle(OrthographicCameraBundle::new_2d());
-    // commands.spawn_bundle(SpriteBundle {
-    //     texture: asset_server.load("images/abdulovhell.jpg"),
-    //     ..default()
-    // });
-
     audio.play_looped(asset_server.load("music/biboran.mp3"));
 
     let texture_handle = asset_server.load("images/abdulovhell.jpg");
@@ -135,19 +150,6 @@ pub fn spawn_circle_of_cubes(
         ..Default::default()
     });
 
-    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
-    let text_style = TextStyle {
-        font,
-        font_size: 60.0,
-        color: Color::WHITE,
-    };
-    let box_size = Vec2::new(300.0, 200.0);
-    let box_position = Vec2::new(0.0, -250.0);
-    let text_alignment_topleft = TextAlignment {
-        vertical: VerticalAlign::Top,
-        horizontal: HorizontalAlign::Left,
-    };
-
     // spawn title
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
@@ -218,7 +220,6 @@ pub fn spawn_circle_of_cubes(
 }
 
 pub fn sys_rotate_cube(
-    mut commands: Commands,
     time: Res<Time>,
     mut query_cube: Query<&mut Transform, With<Cube>>,
     mut query_pentagram: Query<&mut Transform, (With<Pentagram>, Without<Cube>)>,
@@ -229,17 +230,13 @@ pub fn sys_rotate_cube(
         transform.rotation *= Quat::from_rotation_y(0.7 * time.delta_seconds());
     }
 
-    let rotation = Quat::from_rotation_y(0.1 * time.delta_seconds());
-
     let transforms: Vec<&Transform> = query_cube.iter().collect();
     let pentragram_transforms: Vec<&Transform> = query_pentagram.iter().collect();
     let rotation_quat = pentragram_transforms[0].rotation;
 
     // Spawn Circle of Cubes
     for i in 0..11 {
-        let angle_start = std::f32::consts::PI * 2.0 / 11.0 * (i as f32);
-        let index_start = i;
-        let mut index_end;
+        let index_end;
         if i + 4 < 11 {
             index_end = i + 4;
         } else {
@@ -249,7 +246,7 @@ pub fn sys_rotate_cube(
         let start_line = rotation_quat.mul_vec3(transforms[i * 2].translation);
         let end_line = rotation_quat.mul_vec3(transforms[index_end * 2].translation);
 
-        lines.line(start_line, end_line, 0.1);
+        lines.line_colored(start_line, end_line, 0.2, Color::rgba(0.9, 0.7, 0.2, 0.3));
     }
 
     // pentagram rotate
@@ -258,10 +255,10 @@ pub fn sys_rotate_cube(
     }
 }
 
-pub fn draw_random_lines(mut commands: Commands, mut lines: ResMut<DebugLines>) {
+pub fn draw_random_lines(mut lines: ResMut<DebugLines>) {
     let mut rng = rand::thread_rng();
     // Spawn Circle of Cubes
-    for i in 0..60 {
+    for _ in 0..60 {
         let start_line = Vec3::new(
             rng.gen_range(-10.0..10.0),
             rng.gen_range(-10.0..10.0),
@@ -274,5 +271,18 @@ pub fn draw_random_lines(mut commands: Commands, mut lines: ResMut<DebugLines>) 
         );
 
         lines.line_colored(start_line, end_line, 0.5, Color::rgba(0.1, 0.01, 0.01, 1.0));
+    }
+}
+
+// Plugins
+
+pub struct MainMenuPlugin;
+impl Plugin for MainMenuPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugin(BloodfieldPlugin)
+            .add_startup_system(sys_setup_camera)
+            .add_startup_system(sys_spawn_circle_of_cubes)
+            .add_system(sys_rotate_cube)
+            .add_system(draw_random_lines);
     }
 }

@@ -1,7 +1,6 @@
 use bevy::{
     core::FixedTimestep,
     ecs::system::{lifetimeless::SRes, SystemParamItem},
-    math::const_vec3,
     pbr::MaterialPipeline,
     prelude::*,
     reflect::TypeUuid,
@@ -16,11 +15,6 @@ use bevy::{
         renderer::RenderDevice,
     },
 };
-use bevy_inspector_egui::WorldInspectorPlugin;
-use rand::Rng;
-
-#[derive(Component)]
-struct ScreenTag;
 
 pub struct BloodfieldPlugin;
 impl Plugin for BloodfieldPlugin {
