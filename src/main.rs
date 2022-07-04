@@ -3,7 +3,9 @@ use bevy_inspector_egui::WorldInspectorPlugin;
 use bevy_kira_audio::AudioPlugin;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 
+mod app_states;
 mod bloodfield;
+mod falling;
 mod main_menu;
 
 fn main() {
@@ -16,7 +18,11 @@ fn main() {
         .add_plugin(DebugLinesPlugin::with_depth_test(true))
         .add_plugin(WorldInspectorPlugin::new())
         // Main menu
-        .add_plugin(main_menu::MainMenuPlugin);
+        .add_plugin(main_menu::MainMenuPlugin)
+        // Falling Game
+        .add_plugin(falling::FallingMinigamePlugin)
+        // States
+        .add_state(app_states::AppState::MainMenu);
 
     app.run();
 }

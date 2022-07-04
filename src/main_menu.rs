@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_kira_audio::Audio;
 use bevy_prototype_debug_lines::DebugLines;
 
+use crate::app_states::*;
 use crate::bloodfield::*;
 use rand::Rng;
 
@@ -9,6 +10,9 @@ use rand::Rng;
 
 #[derive(Component, Default)]
 pub struct Cube;
+
+#[derive(Component, Default)]
+pub struct MainMenuComponent;
 
 #[derive(Component, Default)]
 pub struct Pentagram;
@@ -20,6 +24,7 @@ struct CubeBundle {
     #[bundle]
     pbr_bundle: PbrBundle,
     cube: Cube,
+    marker: MainMenuComponent,
 }
 
 // Systems
@@ -33,10 +38,12 @@ fn sys_setup_camera(mut commands: Commands) {
     camera_transform.scale.z = 1.5;
 
     // Camera
-    commands.spawn_bundle(PerspectiveCameraBundle {
-        transform: camera_transform,
-        ..Default::default()
-    });
+    commands
+        .spawn_bundle(PerspectiveCameraBundle {
+            transform: camera_transform,
+            ..Default::default()
+        })
+        .insert(MainMenuComponent);
 }
 
 pub fn sys_spawn_circle_of_cubes(
@@ -73,16 +80,14 @@ pub fn sys_spawn_circle_of_cubes(
 
     let bundle = MaterialMeshBundle {
         mesh: mesh.clone(),
-        // material: bloodfield_material,
         material: red_material_handle,
         transform: image_transform,
         ..default()
     };
 
-    commands.spawn_bundle(bundle);
+    commands.spawn_bundle(bundle).insert(MainMenuComponent);
 
-    // spawn background shader mesh
-
+    // Spawn background shader mesh
     let mut image_transform = Transform::from_translation(Vec3::new(-5.5, 0.0, 0.0))
         .with_scale(Vec3::new(25.0, 0.0, 25.0));
 
@@ -96,10 +101,9 @@ pub fn sys_spawn_circle_of_cubes(
         ..default()
     };
 
-    commands.spawn_bundle(bundle);
+    commands.spawn_bundle(bundle).insert(MainMenuComponent);
 
     // Spawn Circle of Cubes
-
     commands
         .spawn_bundle(PbrBundle { ..default() })
         .with_children(|parent| {
@@ -136,21 +140,26 @@ pub fn sys_spawn_circle_of_cubes(
                 });
             }
         })
-        .insert(Pentagram);
+        .insert(Pentagram)
+        .insert(MainMenuComponent);
 
-    // spawn light source
-
-    commands.spawn_bundle(PointLightBundle {
-        point_light: PointLight {
-            intensity: 200.0,
-            shadows_enabled: false,
+    // Spawn light source
+    commands
+        .spawn_bundle(PointLightBundle {
+            point_light: PointLight {
+                intensity: 200.0,
+                shadows_enabled: false,
+                ..Default::default()
+            },
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
             ..Default::default()
-        },
-        transform: Transform::from_xyz(0.0, 0.0, 0.0),
-        ..Default::default()
-    });
+        })
+        .insert(MainMenuComponent);
 
-    // spawn title
+    // Draw Title
+    commands
+        .spawn_bundle(UiCameraBundle::default())
+        .insert(MainMenuComponent);
     let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
     let text = Text::with_section(
@@ -166,8 +175,7 @@ pub fn sys_spawn_circle_of_cubes(
         },
     );
 
-    commands.spawn_bundle(UiCameraBundle::default());
-
+    // Draw Button
     commands
         .spawn_bundle(NodeBundle {
             style: Style {
@@ -177,7 +185,7 @@ pub fn sys_spawn_circle_of_cubes(
                 flex_direction: FlexDirection::Column,
                 ..Default::default()
             },
-            color: Color::WHITE.clone().into(),
+            color: NORMAL_BUTTON.into(),
             visibility: Visibility { is_visible: false },
             ..Default::default()
         })
@@ -204,7 +212,7 @@ pub fn sys_spawn_circle_of_cubes(
                             TextStyle {
                                 font: font.clone(),
                                 font_size: 15.0,
-                                color: Color::rgb(0.9, 0.9, 0.9),
+                                color: Color::WHITE.into(),
                             },
                             Default::default(),
                         ),
@@ -216,7 +224,39 @@ pub fn sys_spawn_circle_of_cubes(
                 text,
                 ..Default::default()
             });
-        });
+        })
+        .insert(MainMenuComponent);
+}
+
+const NORMAL_BUTTON: Color = Color::rgb(0.65, 0.15, 0.15);
+const HOVERED_BUTTON: Color = Color::rgb(0.75, 0.25, 0.25);
+const PRESSED_BUTTON: Color = Color::rgb(1.0, 0.35, 0.25);
+
+fn sys_button_new_game(
+    mut interaction_query: Query<
+        (&Interaction, &mut UiColor, &Children),
+        (Changed<Interaction>, With<Button>),
+    >,
+    asset_server: Res<AssetServer>,
+    audio: Res<Audio>,
+    mut app_state: ResMut<State<AppState>>,
+) {
+    for (interaction, mut color, _) in interaction_query.iter_mut() {
+        match *interaction {
+            Interaction::Clicked => {
+                audio.play(asset_server.load("music/click.mp3"));
+                *color = PRESSED_BUTTON.into();
+                app_state.set(AppState::InGame).unwrap();
+            }
+            Interaction::Hovered => {
+                audio.play(asset_server.load("music/hover.mp3"));
+                *color = HOVERED_BUTTON.into();
+            }
+            Interaction::None => {
+                *color = NORMAL_BUTTON.into();
+            }
+        }
+    }
 }
 
 pub fn sys_rotate_cube(
@@ -274,15 +314,36 @@ pub fn draw_random_lines(mut lines: ResMut<DebugLines>) {
     }
 }
 
+fn sys_clear_entities(
+    mut commands: Commands,
+    audio: Res<Audio>,
+    mut app_state: ResMut<State<AppState>>,
+    mut main_menu_components: Query<Entity, With<MainMenuComponent>>,
+) {
+    for e in main_menu_components.iter_mut() {
+        commands.entity(e).despawn_recursive();
+    }
+
+    audio.stop();
+}
+
 // Plugins
 
 pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(BloodfieldPlugin)
-            .add_startup_system(sys_setup_camera)
-            .add_startup_system(sys_spawn_circle_of_cubes)
-            .add_system(sys_rotate_cube)
-            .add_system(draw_random_lines);
+            .add_system_set(
+                SystemSet::on_update(AppState::MainMenu)
+                    .with_system(sys_rotate_cube)
+                    .with_system(draw_random_lines)
+                    .with_system(sys_button_new_game),
+            )
+            .add_system_set(
+                SystemSet::on_enter(AppState::MainMenu)
+                    .with_system(sys_setup_camera)
+                    .with_system(sys_spawn_circle_of_cubes),
+            )
+            .add_system_set(SystemSet::on_exit(AppState::MainMenu).with_system(sys_clear_entities));
     }
 }

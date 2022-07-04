@@ -5,14 +5,15 @@ version = "0.0.1"
 
 [dependencies]
 bevy-inspector-egui = "0.11"
-bevy_prototype_debug_lines = { version = "0.7", features = ["3d"] }
-rand = "0.8.5"
+bevy_prototype_debug_lines = {version = "0.7", features = ["3d"]}
 bevy_tweening = "0.4.0"
 bytes = "1.1.0"
+heron = {version = "3.1.0", features = ["3d"]}
+rand = "0.8.5"
 
 [dependencies.bevy]
-version = "0.7"
 default-features = false
+version = "0.7"
 # These are the remaining default features other than `bevy_audio` and `mp3`
 features = [
   "render",
@@ -23,7 +24,7 @@ features = [
   "jpeg",
   "hdr",
   "filesystem_watcher",
-  "x11"
+  "x11",
 ]
 
 [dependencies.bevy_kira_audio]
@@ -32,10 +33,7 @@ version = "0.10.0"
 default-features = false
 # enable the features you care about
 features = [
-  "wav",
-  "flac",
   "mp3",
-  "ogg",
 ]
 
 [profile.dev]
