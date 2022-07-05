@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy_kira_audio::Audio;
 use bevy_prototype_debug_lines::DebugLines;
+use bevy_prototype_debug_lines::DebugLinesPlugin;
 
 use crate::app_states::*;
 use crate::bloodfield::*;
@@ -332,6 +333,7 @@ pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(BloodfieldPlugin)
+            .add_plugin(DebugLinesPlugin::with_depth_test(true))
             .add_system_set(
                 SystemSet::on_update(AppState::MainMenu)
                     .with_system(sys_rotate_cube)

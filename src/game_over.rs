@@ -17,6 +17,8 @@ pub struct GameOverText;
 fn sys_draw_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn_bundle(UiCameraBundle::default());
 
+    commands.insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)));
+
     let font = asset_server.load("fonts/ARCADECLASSIC.ttf");
     let game_over_text = Text::with_section(
         "game over",

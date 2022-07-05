@@ -2,6 +2,7 @@ use crate::app_states::*;
 use bevy::core::FixedTimestep;
 use bevy::prelude::*;
 use bevy_kira_audio::Audio;
+use bevy_prototype_debug_lines::{DebugLines, DebugLinesPlugin};
 use bitflags::bitflags;
 use heron::*;
 
@@ -98,6 +99,12 @@ fn new_actor_bundle() -> ActorBundle {
     };
 }
 
+// Resources
+
+struct FallingState {
+    cycle_number: u8,
+}
+
 // Physics
 
 // Define your physics layers
@@ -186,7 +193,7 @@ fn sys_spawn_teleport(
         });
 }
 
-pub fn sys_spawn_cubes(
+fn sys_spawn_environment(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -258,10 +265,12 @@ pub fn sys_spawn_cubes(
     }
 }
 
-pub fn sys_move_cubes(
+fn sys_animate_environment(
     time: Res<Time>,
     mut query_cube: Query<&mut Transform, With<Cube>>,
     mut query_floor: Query<(&mut Transform, &Floor), (With<Floor>, Without<Cube>)>,
+    mut lines: ResMut<DebugLines>,
+    state: Res<FallingState>,
 ) {
     for mut transform in query_cube.iter_mut() {
         transform.rotation *= Quat::from_rotation_x(1.0 * time.delta_seconds());
@@ -275,6 +284,35 @@ pub fn sys_move_cubes(
         };
 
         transform.rotation *= Quat::from_rotation_y(dir * 1.0 * time.delta_seconds());
+    }
+
+    let transforms: Vec<&Transform> = query_cube.iter().collect();
+    let floor_transforms: Vec<(&Transform, &Floor)> = query_floor.iter().collect();
+
+    if state.cycle_number == 2 || state.cycle_number == 3 {
+        for j in 0..300 {
+            let y = 10.0 * (j as f32);
+            let rotation_quat = floor_transforms[j].0.rotation;
+
+            // Spawn Circle of Cubes
+            for i in 0..11 {
+                let index_end;
+                if i + 4 < 11 {
+                    index_end = i + 4;
+                } else {
+                    index_end = i + 4 - 11;
+                }
+
+                let mut start_line = rotation_quat.mul_vec3(transforms[j * 11 + i * 2].translation);
+                start_line.y = y;
+
+                let mut end_line =
+                    rotation_quat.mul_vec3(transforms[j * 11 + index_end * 2].translation);
+                end_line.y = y;
+
+                lines.line_colored(start_line, end_line, 1.0, Color::rgba(0.2, 0.1, 0.1, 1.0));
+            }
+        }
     }
 }
 
@@ -560,8 +598,11 @@ pub(crate) fn control_player(
 }
 
 fn sys_check_teleport_collision(
+    mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
     mut query_actor: Query<(&mut Transform, &mut Velocity, &Actor)>,
+    mut query_cube: Query<(&mut Visibility, With<Cube>)>,
+    mut state: ResMut<FallingState>,
 ) {
     fn is_player(layers: CollisionLayers) -> bool {
         layers.contains_group(Layer::Player) && !layers.contains_group(Layer::Teleport)
@@ -571,7 +612,7 @@ fn sys_check_teleport_collision(
         !layers.contains_group(Layer::Player) && layers.contains_group(Layer::Teleport)
     }
 
-    collision_events
+    let events = collision_events
         .iter()
         .filter_map(|event| {
             let (entity_1, entity_2) = event.rigid_body_entities();
@@ -585,12 +626,23 @@ fn sys_check_teleport_collision(
                 None
             }
         })
-        .for_each(|_| {
-            for (mut t, mut v, _) in query_actor.iter_mut() {
-                t.translation.y = 3000.0;
-                v.linear.y = 0.0;
+        .count();
+
+    if events > 0 {
+        for (mut t, mut v, _) in query_actor.iter_mut() {
+            v.linear.y = 0.0;
+            t.translation.y = 3000.0;
+        }
+        commands.insert_resource(ClearColor(Color::rgb(1.0, 1.0, 1.0)));
+
+        state.cycle_number += 1;
+
+        if state.cycle_number == 2 {
+            for (mut v, _) in query_cube.iter_mut() {
+                v.is_visible = false;
             }
-        });
+        }
+    }
 }
 
 // Plugins
@@ -599,11 +651,14 @@ pub struct FallingMinigamePlugin;
 impl Plugin for FallingMinigamePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(PhysicsPlugin::default())
+            .add_plugin(DebugLinesPlugin::with_depth_test(true))
             .insert_resource(Gravity::from(Vec3::new(0.0, -9.81, 0.0)));
+
+        app.insert_resource(FallingState { cycle_number: 1 });
 
         app.add_system_set(
             SystemSet::on_update(AppState::InGame)
-                .with_system(sys_move_cubes)
+                .with_system(sys_animate_environment)
                 .with_system(sys_update_hud)
                 .with_system(sys_keyboard_control)
                 .with_system(sys_check_teleport_collision),
@@ -617,7 +672,7 @@ impl Plugin for FallingMinigamePlugin {
             SystemSet::on_enter(AppState::InGame)
                 .with_system(sys_spawn_player)
                 .with_system(sys_draw_hud)
-                .with_system(sys_spawn_cubes)
+                .with_system(sys_spawn_environment)
                 .with_system(sys_spawn_teleport),
         )
         .add_system_set(SystemSet::on_exit(AppState::InGame).with_system(sys_clear_entities));

@@ -16,7 +16,6 @@ fn main() {
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .add_plugins(DefaultPlugins)
         .add_plugin(AudioPlugin)
-        .add_plugin(DebugLinesPlugin::with_depth_test(true))
         .add_plugin(WorldInspectorPlugin::new())
         // Main menu
         .add_plugin(main_menu::MainMenuPlugin)
