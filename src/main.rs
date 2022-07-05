@@ -6,6 +6,7 @@ use bevy_prototype_debug_lines::DebugLinesPlugin;
 mod app_states;
 mod bloodfield;
 mod falling;
+mod game_over;
 mod main_menu;
 
 fn main() {
@@ -19,6 +20,8 @@ fn main() {
         .add_plugin(WorldInspectorPlugin::new())
         // Main menu
         .add_plugin(main_menu::MainMenuPlugin)
+        // Main menu
+        .add_plugin(game_over::GameOverScreenPlugin)
         // Falling Game
         .add_plugin(falling::FallingMinigamePlugin)
         // States

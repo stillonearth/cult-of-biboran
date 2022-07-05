@@ -2,4 +2,5 @@
 pub(crate) enum AppState {
     MainMenu,
     InGame,
+    GameOver,
 }

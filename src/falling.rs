@@ -2,11 +2,16 @@ use crate::app_states::*;
 use bevy::core::FixedTimestep;
 use bevy::prelude::*;
 use bevy_kira_audio::Audio;
+use bitflags::bitflags;
 use heron::*;
+
 // Components
 
 #[derive(Component, Default)]
 pub struct Cube;
+
+#[derive(Component, Default)]
+pub struct Teleport;
 
 #[derive(Component, Default)]
 pub struct Floor {
@@ -37,6 +42,18 @@ struct CubeBundle {
     pbr_bundle: PbrBundle,
     cube: Cube,
     marker: FallingGameComponent,
+    collision_shape: CollisionShape,
+    collision_layers: CollisionLayers,
+}
+
+#[derive(Bundle, Default)]
+struct TeleportBundle {
+    #[bundle]
+    pbr_bundle: PbrBundle,
+    teleport: Teleport,
+    marker: FallingGameComponent,
+    collision_shape: CollisionShape,
+    collision_layers: CollisionLayers,
 }
 
 #[derive(Component, Clone)]
@@ -46,7 +63,8 @@ pub(crate) struct Actor {
 
 #[derive(Bundle)]
 pub(crate) struct ActorBundle {
-    collision_layers: CollisionLayers,
+    // collision_layers_world: CollisionLayers,
+    collision_layers_teleport: CollisionLayers,
     collision_shape: CollisionShape,
     global_transform: GlobalTransform,
     actor: Actor,
@@ -55,12 +73,13 @@ pub(crate) struct ActorBundle {
     transform: Transform,
     velocity: Velocity,
     physics_material: PhysicMaterial,
+    marker: FallingGameComponent,
 }
 
 fn new_actor_bundle() -> ActorBundle {
     return ActorBundle {
         transform: Transform {
-            translation: Vec3::new(0.0 as f32, 2000.0, 0.0),
+            translation: Vec3::new(0.0 as f32, 3050.0, 0.0),
             ..default()
         },
         global_transform: GlobalTransform::identity(),
@@ -71,9 +90,11 @@ fn new_actor_bundle() -> ActorBundle {
             density: 200.0,
             ..Default::default()
         },
-        collision_layers: CollisionLayers::new(Layer::Player, Layer::World),
+        // collision_layers_world: CollisionLayers::new(Layer::Player, Layer::World),
+        collision_layers_teleport: CollisionLayers::new(Layer::Player, Layer::Teleport),
         actor: Actor { health: 100.0 },
         rotation_constraints: RotationConstraints::lock(),
+        marker: FallingGameComponent,
     };
 }
 
@@ -84,11 +105,21 @@ fn new_actor_bundle() -> ActorBundle {
 enum Layer {
     World,
     Player,
-    Enemies,
+    Teleport,
 }
 
+// GAMEPLAY VARIABLES
+
+const RADIUS: f32 = 8.5;
+
 // Systems
-fn sys_spawn_player(mut commands: Commands, audio: Res<Audio>, asset_server: Res<AssetServer>) {
+fn sys_spawn_player(
+    mut commands: Commands,
+    audio: Res<Audio>,
+    asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
     audio.play_looped(asset_server.load("music/falling.mp3"));
 
     let mut camera_transform = Transform::from_matrix(Mat4::from_rotation_translation(
@@ -107,6 +138,54 @@ fn sys_spawn_player(mut commands: Commands, audio: Res<Audio>, asset_server: Res
     });
 }
 
+fn sys_spawn_teleport(
+    mut commands: Commands,
+    audio: Res<Audio>,
+    asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // sphere light
+
+    let mesh = meshes.add(Mesh::from(shape::UVSphere {
+        sectors: 128,
+        stacks: 64,
+        ..default()
+    }));
+
+    let material = materials.add(StandardMaterial {
+        base_color: Color::rgb(1.0, 0.1, 0.1),
+        unlit: true,
+        ..default()
+    });
+
+    commands
+        .spawn_bundle(TeleportBundle {
+            pbr_bundle: PbrBundle {
+                mesh: mesh.clone(),
+                material: material,
+                transform: Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(30.0)),
+                ..default()
+            },
+            marker: FallingGameComponent,
+            teleport: Teleport,
+            collision_shape: CollisionShape::Sphere { radius: 8.5 },
+            collision_layers: CollisionLayers::new(Layer::Teleport, Layer::Player),
+        })
+        .insert(RigidBody::Static)
+        .with_children(|children| {
+            children.spawn_bundle(PointLightBundle {
+                point_light: PointLight {
+                    intensity: 1500.0,
+                    radius: 1500.0,
+                    color: Color::rgb(1.0, 0.2, 1.0),
+                    ..default()
+                },
+                ..default()
+            });
+        });
+}
+
 pub fn sys_spawn_cubes(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -114,12 +193,12 @@ pub fn sys_spawn_cubes(
 ) {
     // Spawn Circle of Cubes
 
-    for j in 0..200 {
+    for j in 0..300 {
         let y = (j as f32) * 10.0;
 
         let material;
 
-        if j % 2 == 0 {
+        if j % (2 as u16) == 0 {
             material = materials.add(Color::rgb(0.8, 0.1, 0.1).into());
         } else {
             material = materials.add(Color::rgb(0.8, 0.2, 0.1).into());
@@ -130,10 +209,9 @@ pub fn sys_spawn_cubes(
             .with_children(|parent| {
                 for i in 0..11 {
                     let angle = std::f32::consts::PI * 2.0 / 11.0 * (i as f32);
-                    let radius = 3.5;
 
-                    let x = f32::sin(angle) * radius;
-                    let z = f32::cos(angle) * radius;
+                    let x = f32::sin(angle) * RADIUS;
+                    let z = f32::cos(angle) * RADIUS;
 
                     parent.spawn_bundle(CubeBundle {
                         pbr_bundle: PbrBundle {
@@ -174,8 +252,9 @@ pub fn sys_spawn_cubes(
             })
             .insert(Floor {
                 rotating: true,
-                direction: j % 2,
-            });
+                direction: (j % (2 as u16)) as u8,
+            })
+            .insert(FallingGameComponent);
     }
 }
 
@@ -199,24 +278,50 @@ pub fn sys_move_cubes(
     }
 }
 
-fn sys_check_termination(mut query_actor: Query<(&mut Transform, &Actor)>) {
-    for (mut t, _) in query_actor.iter_mut() {
-        if t.translation.y <= 000.0 {
-            t.translation.y = 2000.0;
+fn sys_adjust_health(
+    mut query_actor: Query<(&Velocity, &mut Actor)>,
+    mut app_state: ResMut<State<AppState>>,
+    audio: Res<Audio>,
+    asset_server: Res<AssetServer>,
+) {
+    for (v, mut a) in query_actor.iter_mut() {
+        let abs_speed = f32::abs(v.linear.y);
+
+        if abs_speed <= 100.0 {
+            audio.set_playback_rate(abs_speed / 100.);
+        }
+
+        if f32::abs(v.linear.y) > 100.0 {
+            a.health -= abs_speed / 1000.0
+        }
+
+        if a.health <= 0.0 {
+            if *app_state.current() != AppState::GameOver {
+                app_state.set(AppState::GameOver).unwrap();
+            }
         }
     }
 }
 
-fn sys_adjust_health(mut query_actor: Query<(&Velocity, &mut Actor)>) {
-    for (v, mut a) in query_actor.iter_mut() {
-        if f32::abs(v.linear.y) > 100.0 {
-            a.health -= f32::abs(v.linear.y) / 1000.0
-        }
-
-        if a.health <= 0.0 {
-            println!("Game over");
-        }
+fn sys_clear_entities(
+    mut commands: Commands,
+    mut game_objects: Query<Entity, With<FallingGameComponent>>,
+    mut interface: Query<Entity, With<Interface>>,
+    mut actors: Query<Entity, With<Actor>>,
+) {
+    for e in game_objects.iter_mut() {
+        commands.entity(e).despawn_recursive();
     }
+
+    for e in interface.iter_mut() {
+        commands.entity(e).despawn_recursive();
+    }
+
+    for e in actors.iter_mut() {
+        commands.entity(e).despawn_recursive();
+    }
+
+    // audio.stop();
 }
 
 // HUD
@@ -339,6 +444,155 @@ pub(crate) fn sys_update_hud(
     }
 }
 
+// Control
+
+bitflags! {
+    #[derive(Default)]
+    pub struct PlayerActionFlags: u32 {
+        const IDLE = 1 << 0;
+        const UP = 1 << 1;
+        const DOWN = 1 << 2;
+        const LEFT = 1 << 3;
+        const RIGHT = 1 << 4;
+        const BRAKE = 1 << 5;
+    }
+}
+
+pub(crate) fn sys_keyboard_control(
+    keys: Res<Input<KeyCode>>,
+    player_movement_q: Query<(&mut heron::prelude::Velocity, &mut Transform), With<Actor>>,
+    collision_events: EventReader<CollisionEvent>,
+) {
+    let mut player_action = PlayerActionFlags::IDLE;
+
+    for key in keys.get_pressed() {
+        if *key == KeyCode::Left {
+            player_action |= PlayerActionFlags::LEFT;
+        }
+        if *key == KeyCode::Right {
+            player_action |= PlayerActionFlags::RIGHT;
+        }
+        if *key == KeyCode::Up {
+            player_action |= PlayerActionFlags::UP;
+        }
+        if *key == KeyCode::Down {
+            player_action |= PlayerActionFlags::DOWN;
+        }
+        if *key == KeyCode::Space {
+            player_action |= PlayerActionFlags::BRAKE;
+        }
+    }
+
+    control_player(player_action, player_movement_q, collision_events);
+}
+
+pub(crate) fn control_player(
+    player_action: PlayerActionFlags,
+    mut player_movement_q: Query<(&mut heron::prelude::Velocity, &mut Transform), With<Actor>>,
+    mut collision_events: EventReader<CollisionEvent>,
+) {
+    fn is_player(layers: CollisionLayers) -> bool {
+        layers.contains_group(Layer::Player) && !layers.contains_group(Layer::World)
+    }
+
+    fn is_world(layers: CollisionLayers) -> bool {
+        !layers.contains_group(Layer::Player) && layers.contains_group(Layer::World)
+    }
+
+    const SPEED: f32 = 0.3;
+
+    for (mut velocity, mut transform) in player_movement_q.iter_mut() {
+        // *velocity = Velocity::from_linear(Vec3::ZERO);
+
+        if player_action.contains(PlayerActionFlags::UP) {
+            let delta = transform.translation + Vec3::new(0.0, 0.0, -SPEED);
+            let radius = (delta.x.powf(2.0) + delta.z.powf(2.0)).sqrt();
+            if radius <= RADIUS - 1.0 {
+                transform.translation = delta;
+            }
+        }
+        if player_action.contains(PlayerActionFlags::LEFT) {
+            let delta = transform.translation + Vec3::new(-SPEED, 0.0, 0.0);
+            let radius = (delta.x.powf(2.0) + delta.z.powf(2.0)).sqrt();
+            if radius <= RADIUS - 1.0 {
+                transform.translation = delta;
+            }
+        }
+        if player_action.contains(PlayerActionFlags::DOWN) {
+            let delta = transform.translation + Vec3::new(0.0, 0.0, SPEED);
+            let radius = (delta.x.powf(2.0) + delta.z.powf(2.0)).sqrt();
+            if radius <= RADIUS - 1.0 {
+                transform.translation = delta;
+            }
+        }
+        if player_action.contains(PlayerActionFlags::RIGHT) {
+            let delta = transform.translation + Vec3::new(SPEED, 0.0, 0.0);
+            let radius = (delta.x.powf(2.0) + delta.z.powf(2.0)).sqrt();
+            if radius <= RADIUS - 1.0 {
+                transform.translation = delta;
+            }
+        }
+
+        if player_action.contains(PlayerActionFlags::BRAKE) {
+            if velocity.linear.y < 0.0 {
+                velocity.linear.y += 1.0;
+            }
+        }
+
+        collision_events
+            .iter()
+            .filter_map(|event| {
+                let (entity_1, entity_2) = event.rigid_body_entities();
+                let (layers_1, layers_2) = event.collision_layers();
+
+                if is_player(layers_1) && is_world(layers_2) {
+                    Some(entity_2)
+                } else if is_player(layers_2) && is_world(layers_1) {
+                    Some(entity_1)
+                } else {
+                    None
+                }
+            })
+            .for_each(|_| {
+                *velocity = Velocity::from_linear(Vec3::X * 0.0);
+            });
+    }
+}
+
+fn sys_check_teleport_collision(
+    mut collision_events: EventReader<CollisionEvent>,
+    mut query_actor: Query<(&mut Transform, &mut Velocity, &Actor)>,
+) {
+    fn is_player(layers: CollisionLayers) -> bool {
+        layers.contains_group(Layer::Player) && !layers.contains_group(Layer::Teleport)
+    }
+
+    fn is_teleport(layers: CollisionLayers) -> bool {
+        !layers.contains_group(Layer::Player) && layers.contains_group(Layer::Teleport)
+    }
+
+    collision_events
+        .iter()
+        .filter_map(|event| {
+            let (entity_1, entity_2) = event.rigid_body_entities();
+            let (layers_1, layers_2) = event.collision_layers();
+
+            if is_player(layers_1) && is_teleport(layers_2) {
+                Some(entity_2)
+            } else if is_player(layers_2) && is_teleport(layers_1) {
+                Some(entity_1)
+            } else {
+                None
+            }
+        })
+        .for_each(|_| {
+            for (mut t, mut v, _) in query_actor.iter_mut() {
+                t.translation.y = 3000.0;
+                v.linear.y = 0.0;
+            }
+        });
+}
+
 // Plugins
 
 pub struct FallingMinigamePlugin;
@@ -351,7 +605,8 @@ impl Plugin for FallingMinigamePlugin {
             SystemSet::on_update(AppState::InGame)
                 .with_system(sys_move_cubes)
                 .with_system(sys_update_hud)
-                .with_system(sys_check_termination),
+                .with_system(sys_keyboard_control)
+                .with_system(sys_check_teleport_collision),
         )
         .add_system_set(
             SystemSet::new()
@@ -362,7 +617,9 @@ impl Plugin for FallingMinigamePlugin {
             SystemSet::on_enter(AppState::InGame)
                 .with_system(sys_spawn_player)
                 .with_system(sys_draw_hud)
-                .with_system(sys_spawn_cubes),
-        );
+                .with_system(sys_spawn_cubes)
+                .with_system(sys_spawn_teleport),
+        )
+        .add_system_set(SystemSet::on_exit(AppState::InGame).with_system(sys_clear_entities));
     }
 }

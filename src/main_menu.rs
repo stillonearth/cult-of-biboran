@@ -160,13 +160,12 @@ pub fn sys_spawn_circle_of_cubes(
     commands
         .spawn_bundle(UiCameraBundle::default())
         .insert(MainMenuComponent);
-    let font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
     let text = Text::with_section(
         "CVLT OV BIBΩRAN",
         TextStyle {
             font_size: 35.0,
-            font: font.clone(),
+            font: asset_server.load("fonts/FiraMono-Medium.ttf"),
             color: Color::rgb(0.9, 0.9, 0.9),
         },
         TextAlignment {
@@ -210,8 +209,8 @@ pub fn sys_spawn_circle_of_cubes(
                         text: Text::with_section(
                             "CONFESS",
                             TextStyle {
-                                font: font.clone(),
-                                font_size: 15.0,
+                                font: asset_server.load("fonts/ARCADECLASSIC.TTF"),
+                                font_size: 20.0,
                                 color: Color::WHITE.into(),
                             },
                             Default::default(),
