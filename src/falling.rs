@@ -5,11 +5,23 @@ use bevy_kira_audio::Audio;
 use bevy_prototype_debug_lines::{DebugLines, DebugLinesPlugin};
 use bitflags::bitflags;
 use heron::*;
+use rand::Rng;
 
 // Components
 
+#[derive(PartialEq, Default)]
+pub enum CubeType {
+    #[default]
+    Environment,
+    Health,
+    Speed,
+    Brake,
+}
+
 #[derive(Component, Default)]
-pub struct Cube;
+pub struct Cube {
+    cube_type: CubeType,
+}
 
 #[derive(Component, Default)]
 pub struct Teleport;
@@ -127,7 +139,7 @@ fn sys_spawn_player(
     // mut meshes: ResMut<Assets<Mesh>>,
     // mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    audio.play_looped(asset_server.load("music/falling.mp3"));
+    audio.play_looped(asset_server.load("music/falling-1.mp3"));
 
     commands.insert_resource(FallingState { cycle_number: 0 });
 
@@ -149,8 +161,6 @@ fn sys_spawn_player(
 
 fn sys_spawn_teleport(
     mut commands: Commands,
-    // audio: Res<Audio>,
-    // asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -193,6 +203,70 @@ fn sys_spawn_teleport(
                 ..default()
             });
         });
+}
+
+fn sys_spawn_game_cubes(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let mut rng = rand::thread_rng();
+
+    for j in 0..300 {
+        let y = (j as f32) * 10.0;
+
+        if j % 5 != 0 {
+            continue;
+        }
+
+        let cube_type = match rng.gen_range(0..3) {
+            0 => CubeType::Brake,
+            1 => CubeType::Health,
+            2 => CubeType::Speed,
+            _ => CubeType::Environment,
+        };
+
+        let angle = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+        let radius = rng.gen_range(0.0..RADIUS);
+
+        let color = match cube_type {
+            CubeType::Brake => Color::rgba(0.7, 0.1, 0.1, 0.3),
+            CubeType::Health => Color::rgba(0.2, 0.7, 0.1, 0.3),
+            CubeType::Speed => Color::rgba(0.2, 0.1, 0.7, 0.3),
+            _ => Color::WHITE,
+        };
+
+        let material = materials.add(StandardMaterial {
+            base_color: color,
+            reflectance: 0.7,
+            alpha_mode: AlphaMode::Opaque,
+            perceptual_roughness: 0.08,
+            ..default()
+        });
+
+        let x = f32::sin(angle) * radius;
+        let z = f32::cos(angle) * radius;
+
+        commands
+            .spawn_bundle(CubeBundle {
+                cube: Cube {
+                    cube_type: cube_type,
+                },
+                pbr_bundle: PbrBundle {
+                    mesh: meshes.add(Mesh::from(shape::Cube { size: 1.6 })),
+                    material: material.clone(),
+                    transform: Transform::from_xyz(x, y, z),
+                    ..default()
+                },
+                ..default()
+            })
+            .insert(CollisionShape::Cuboid {
+                half_extends: Vec3::ONE * 8.5 / 2.0,
+                border_radius: None,
+            })
+            .insert(RigidBody::Static)
+            .insert(CollisionLayers::new(Layer::World, Layer::Player));
+    }
 }
 
 fn sys_spawn_environment(
@@ -269,13 +343,16 @@ fn sys_spawn_environment(
 
 fn sys_animate_environment(
     time: Res<Time>,
-    mut query_cube: Query<&mut Transform, With<Cube>>,
+    mut query_cube: Query<(&mut Transform, &Cube), With<Cube>>,
     mut query_floor: Query<(&mut Transform, &Floor), (With<Floor>, Without<Cube>)>,
     mut lines: ResMut<DebugLines>,
     state: Res<FallingState>,
 ) {
     if state.cycle_number == 0 || state.cycle_number == 2 || state.cycle_number == 4 {
-        for mut transform in query_cube.iter_mut() {
+        for (mut transform, cube) in query_cube.iter_mut() {
+            if cube.cube_type != CubeType::Environment {
+                continue;
+            }
             transform.rotation *= Quat::from_rotation_x(1.0 * time.delta_seconds());
             transform.rotation *= Quat::from_rotation_y(0.7 * time.delta_seconds());
         }
@@ -295,7 +372,7 @@ fn sys_animate_environment(
     }
 
     if state.cycle_number == 2 || state.cycle_number == 6 {
-        let transforms: Vec<&Transform> = query_cube.iter().collect();
+        let transforms: Vec<&Transform> = query_cube.iter().map(|(t, _)| t).collect();
         let floor_transforms: Vec<(&Transform, &Floor)> = query_floor.iter().collect();
 
         for j in 0..300 {
@@ -639,7 +716,9 @@ fn sys_check_teleport_collision(
 
     if events > 0 {
         for (mut t, mut v, _) in query_actor.iter_mut() {
-            v.linear.y = 0.0;
+            if state.cycle_number < 6 {
+                v.linear.y = 0.0;
+            }
             t.translation.y = 3000.0;
         }
 
@@ -652,6 +731,8 @@ fn sys_scene_change(
     state: Res<FallingState>,
     mut app_state: ResMut<State<AppState>>,
     mut query_cube: Query<(&mut Visibility, With<Cube>)>,
+    audio: Res<Audio>,
+    asset_server: Res<AssetServer>,
 ) {
     if !state.is_changed() {
         return;
@@ -668,6 +749,8 @@ fn sys_scene_change(
         }
         4 => {
             commands.insert_resource(ClearColor(Color::rgb(0.0, 0.1, 0.1)));
+            audio.stop();
+            audio.play_looped(asset_server.load("music/falling-2.mp3"));
 
             let mut counter = 0;
             for (mut v, _) in query_cube.iter_mut() {
@@ -699,7 +782,7 @@ fn sys_scene_change(
             }
         }
         8 => {
-            app_state.set(AppState::GameOver);
+            app_state.set(AppState::GameOver).unwrap();
         }
         _ => {}
     }
@@ -730,6 +813,7 @@ impl Plugin for FallingMinigamePlugin {
         )
         .add_system_set(
             SystemSet::on_enter(AppState::InGame)
+                .with_system(sys_spawn_game_cubes)
                 .with_system(sys_spawn_player)
                 .with_system(sys_draw_hud)
                 .with_system(sys_spawn_environment)
