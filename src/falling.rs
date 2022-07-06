@@ -97,14 +97,16 @@ fn new_actor_bundle() -> ActorBundle {
         },
         global_transform: GlobalTransform::identity(),
         velocity: Velocity::from_linear(Vec3::ZERO),
-        collision_shape: CollisionShape::Sphere { radius: 1.0 },
+        collision_shape: CollisionShape::Sphere { radius: 0.5 },
         rigid_body: RigidBody::Dynamic,
         physics_material: PhysicMaterial {
             density: 200.0,
             ..Default::default()
         },
         // collision_layers_world: CollisionLayers::new(Layer::Player, Layer::World),
-        collision_layers_teleport: CollisionLayers::new(Layer::Player, Layer::Teleport),
+        collision_layers_teleport: CollisionLayers::none()
+            .with_group(Layer::Player)
+            .with_masks(&[Layer::World, Layer::Teleport]),
         actor: Actor { health: 10000.0 },
         rotation_constraints: RotationConstraints::lock(),
         marker: FallingGameComponent,
@@ -261,11 +263,15 @@ fn sys_spawn_game_cubes(
                 ..default()
             })
             .insert(CollisionShape::Cuboid {
-                half_extends: Vec3::ONE * 8.5 / 2.0,
+                half_extends: Vec3::ONE,
                 border_radius: None,
             })
-            .insert(RigidBody::Static)
-            .insert(CollisionLayers::new(Layer::World, Layer::Player));
+            .insert(RigidBody::Sensor)
+            .insert(
+                CollisionLayers::none()
+                    .with_group(Layer::World)
+                    .with_masks(&[Layer::Player]),
+            );
     }
 }
 
@@ -726,6 +732,49 @@ fn sys_check_teleport_collision(
     }
 }
 
+fn sys_check_game_cube_collision(
+    mut commands: Commands,
+    mut collision_events: EventReader<CollisionEvent>,
+    mut query_actor: Query<(&mut Transform, &mut Velocity, &Actor)>,
+    mut state: ResMut<FallingState>,
+    audio: Res<Audio>,
+    asset_server: Res<AssetServer>,
+) {
+    fn is_player(layers: CollisionLayers) -> bool {
+        layers.contains_group(Layer::Player) && !layers.contains_group(Layer::World)
+    }
+
+    fn is_world(layers: CollisionLayers) -> bool {
+        !layers.contains_group(Layer::Player) && layers.contains_group(Layer::World)
+    }
+
+    collision_events
+        .iter()
+        .filter_map(|event| {
+            let (entity_1, entity_2) = event.rigid_body_entities();
+            let (layers_1, layers_2) = event.collision_layers();
+
+            if is_player(layers_1) && is_world(layers_2) {
+                Some(entity_2)
+            } else if is_player(layers_2) && is_world(layers_1) {
+                Some(entity_1)
+            } else {
+                None
+            }
+        })
+        .for_each(|e| {
+            commands.entity(e).despawn_recursive();
+            for (_, mut v, a) in query_actor.iter_mut() {
+                v.linear.y = -100.0;
+
+                println!("!!!!");
+            }
+
+            audio.set_playback_rate(1.0);
+            audio.play(asset_server.load("music/box-hit.mp3"));
+        });
+}
+
 fn sys_scene_change(
     mut commands: Commands,
     state: Res<FallingState>,
@@ -804,7 +853,8 @@ impl Plugin for FallingMinigamePlugin {
                 .with_system(sys_update_hud)
                 .with_system(sys_keyboard_control)
                 .with_system(sys_check_teleport_collision)
-                .with_system(sys_scene_change),
+                .with_system(sys_scene_change)
+                .with_system(sys_check_game_cube_collision),
         )
         .add_system_set(
             SystemSet::new()
