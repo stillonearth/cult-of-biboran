@@ -17,7 +17,7 @@ pub struct Teleport;
 #[derive(Component, Default)]
 pub struct Floor {
     direction: u8,
-    rotating: bool,
+    _rotating: bool,
 }
 
 #[derive(Component, Default)]
@@ -93,7 +93,7 @@ fn new_actor_bundle() -> ActorBundle {
         },
         // collision_layers_world: CollisionLayers::new(Layer::Player, Layer::World),
         collision_layers_teleport: CollisionLayers::new(Layer::Player, Layer::Teleport),
-        actor: Actor { health: 100.0 },
+        actor: Actor { health: 10000.0 },
         rotation_constraints: RotationConstraints::lock(),
         marker: FallingGameComponent,
     };
@@ -124,12 +124,14 @@ fn sys_spawn_player(
     mut commands: Commands,
     audio: Res<Audio>,
     asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    // mut meshes: ResMut<Assets<Mesh>>,
+    // mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     audio.play_looped(asset_server.load("music/falling.mp3"));
 
-    let mut camera_transform = Transform::from_matrix(Mat4::from_rotation_translation(
+    commands.insert_resource(FallingState { cycle_number: 0 });
+
+    let camera_transform = Transform::from_matrix(Mat4::from_rotation_translation(
         Quat::from_rotation_x(-std::f32::consts::PI / 2.0).normalize(),
         Vec3::new(0.0, 0.0, 0.0),
     ));
@@ -147,8 +149,8 @@ fn sys_spawn_player(
 
 fn sys_spawn_teleport(
     mut commands: Commands,
-    audio: Res<Audio>,
-    asset_server: Res<AssetServer>,
+    // audio: Res<Audio>,
+    // asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -171,7 +173,7 @@ fn sys_spawn_teleport(
             pbr_bundle: PbrBundle {
                 mesh: mesh.clone(),
                 material: material,
-                transform: Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(30.0)),
+                transform: Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(10.0)),
                 ..default()
             },
             marker: FallingGameComponent,
@@ -258,7 +260,7 @@ fn sys_spawn_environment(
                 });
             })
             .insert(Floor {
-                rotating: true,
+                _rotating: true,
                 direction: (j % (2 as u16)) as u8,
             })
             .insert(FallingGameComponent);
@@ -272,24 +274,30 @@ fn sys_animate_environment(
     mut lines: ResMut<DebugLines>,
     state: Res<FallingState>,
 ) {
-    for mut transform in query_cube.iter_mut() {
-        transform.rotation *= Quat::from_rotation_x(1.0 * time.delta_seconds());
-        transform.rotation *= Quat::from_rotation_y(0.7 * time.delta_seconds());
+    if state.cycle_number == 0 || state.cycle_number == 2 || state.cycle_number == 4 {
+        for mut transform in query_cube.iter_mut() {
+            transform.rotation *= Quat::from_rotation_x(1.0 * time.delta_seconds());
+            transform.rotation *= Quat::from_rotation_y(0.7 * time.delta_seconds());
+        }
+
+        for (mut transform, floor) in query_floor.iter_mut() {
+            let mut dir = match floor.direction {
+                0 => -1.0,
+                _ => 1.0,
+            };
+
+            if state.cycle_number == 4 {
+                dir = -1.0;
+            }
+
+            transform.rotation *= Quat::from_rotation_y(dir * 1.0 * time.delta_seconds());
+        }
     }
 
-    for (mut transform, floor) in query_floor.iter_mut() {
-        let dir = match floor.direction {
-            0 => -1.0,
-            _ => 1.0,
-        };
+    if state.cycle_number == 2 || state.cycle_number == 6 {
+        let transforms: Vec<&Transform> = query_cube.iter().collect();
+        let floor_transforms: Vec<(&Transform, &Floor)> = query_floor.iter().collect();
 
-        transform.rotation *= Quat::from_rotation_y(dir * 1.0 * time.delta_seconds());
-    }
-
-    let transforms: Vec<&Transform> = query_cube.iter().collect();
-    let floor_transforms: Vec<(&Transform, &Floor)> = query_floor.iter().collect();
-
-    if state.cycle_number == 2 || state.cycle_number == 3 {
         for j in 0..300 {
             let y = 10.0 * (j as f32);
             let rotation_quat = floor_transforms[j].0.rotation;
@@ -303,14 +311,17 @@ fn sys_animate_environment(
                     index_end = i + 4 - 11;
                 }
 
-                let mut start_line = rotation_quat.mul_vec3(transforms[j * 11 + i * 2].translation);
+                let mut start_line =
+                    rotation_quat.mul_vec3(transforms[j * 11 + i * 2].translation) * 2.0;
                 start_line.y = y;
 
                 let mut end_line =
-                    rotation_quat.mul_vec3(transforms[j * 11 + index_end * 2].translation);
+                    rotation_quat.mul_vec3(transforms[j * 11 + index_end * 2].translation) * 2.0;
                 end_line.y = y;
 
-                lines.line_colored(start_line, end_line, 1.0, Color::rgba(0.2, 0.1, 0.1, 1.0));
+                if state.cycle_number == 2 || state.cycle_number == 6 {
+                    lines.line_colored(start_line, end_line, 0.1, Color::rgba(0.1, 0.1, 0.1, 0.8));
+                }
             }
         }
     }
@@ -320,7 +331,7 @@ fn sys_adjust_health(
     mut query_actor: Query<(&Velocity, &mut Actor)>,
     mut app_state: ResMut<State<AppState>>,
     audio: Res<Audio>,
-    asset_server: Res<AssetServer>,
+    // asset_server: Res<AssetServer>,
 ) {
     for (v, mut a) in query_actor.iter_mut() {
         let abs_speed = f32::abs(v.linear.y);
@@ -598,10 +609,8 @@ pub(crate) fn control_player(
 }
 
 fn sys_check_teleport_collision(
-    mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
     mut query_actor: Query<(&mut Transform, &mut Velocity, &Actor)>,
-    mut query_cube: Query<(&mut Visibility, With<Cube>)>,
     mut state: ResMut<FallingState>,
 ) {
     fn is_player(layers: CollisionLayers) -> bool {
@@ -633,18 +642,68 @@ fn sys_check_teleport_collision(
             v.linear.y = 0.0;
             t.translation.y = 3000.0;
         }
-        commands.insert_resource(ClearColor(Color::rgb(1.0, 1.0, 1.0)));
 
         state.cycle_number += 1;
+    }
+}
 
-        if state.cycle_number == 2 {
+fn sys_scene_change(
+    mut commands: Commands,
+    state: Res<FallingState>,
+    mut app_state: ResMut<State<AppState>>,
+    mut query_cube: Query<(&mut Visibility, With<Cube>)>,
+) {
+    if !state.is_changed() {
+        return;
+    }
+
+    match state.cycle_number {
+        0 => {}
+        2 => {
+            commands.insert_resource(ClearColor(Color::rgb(1.0, 1.0, 1.0)));
+
             for (mut v, _) in query_cube.iter_mut() {
                 v.is_visible = false;
             }
         }
+        4 => {
+            commands.insert_resource(ClearColor(Color::rgb(0.0, 0.1, 0.1)));
+
+            let mut counter = 0;
+            for (mut v, _) in query_cube.iter_mut() {
+                v.is_visible = false;
+
+                if counter % 5 == 0 {
+                    v.is_visible = true;
+                } else {
+                    v.is_visible = false;
+                }
+
+                counter += 1;
+            }
+        }
+        6 => {
+            commands.insert_resource(ClearColor(Color::rgb(0.8, 0.8, 0.8)));
+
+            let mut counter = 0;
+            for (mut v, _) in query_cube.iter_mut() {
+                v.is_visible = false;
+
+                if counter % 7 == 0 {
+                    v.is_visible = true;
+                } else {
+                    v.is_visible = false;
+                }
+
+                counter += 1;
+            }
+        }
+        8 => {
+            app_state.set(AppState::GameOver);
+        }
+        _ => {}
     }
 }
-
 // Plugins
 
 pub struct FallingMinigamePlugin;
@@ -654,14 +713,15 @@ impl Plugin for FallingMinigamePlugin {
             .add_plugin(DebugLinesPlugin::with_depth_test(true))
             .insert_resource(Gravity::from(Vec3::new(0.0, -9.81, 0.0)));
 
-        app.insert_resource(FallingState { cycle_number: 1 });
+        app.insert_resource(FallingState { cycle_number: 0 });
 
         app.add_system_set(
             SystemSet::on_update(AppState::InGame)
                 .with_system(sys_animate_environment)
                 .with_system(sys_update_hud)
                 .with_system(sys_keyboard_control)
-                .with_system(sys_check_teleport_collision),
+                .with_system(sys_check_teleport_collision)
+                .with_system(sys_scene_change),
         )
         .add_system_set(
             SystemSet::new()

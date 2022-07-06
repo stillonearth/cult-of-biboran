@@ -317,7 +317,7 @@ pub fn draw_random_lines(mut lines: ResMut<DebugLines>) {
 fn sys_clear_entities(
     mut commands: Commands,
     audio: Res<Audio>,
-    mut app_state: ResMut<State<AppState>>,
+    // mut app_state: ResMut<State<AppState>>,
     mut main_menu_components: Query<Entity, With<MainMenuComponent>>,
 ) {
     for e in main_menu_components.iter_mut() {

@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use bevy_inspector_egui::WorldInspectorPlugin;
 use bevy_kira_audio::AudioPlugin;
-use bevy_prototype_debug_lines::DebugLinesPlugin;
 
 mod app_states;
 mod bloodfield;
