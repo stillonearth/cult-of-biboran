@@ -11,6 +11,9 @@ bytes = "1.1.0"
 heron = {version = "3.1.0", features = ["3d"]}
 rand = "0.8.5"
 bitflags = "1.3.2"
+bevy_mouse_tracking_plugin = "0.2.1"
+ezinput = "0.3.6"
+itertools = "0.10.3"
 
 [dependencies.bevy]
 default-features = false
