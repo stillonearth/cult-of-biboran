@@ -1,7 +1,7 @@
 use crate::app_states::*;
 use bevy::core::FixedTimestep;
 use bevy::prelude::*;
-use bevy_kira_audio::Audio;
+use bevy_kira_audio::{Audio, InstanceHandle};
 use bevy_prototype_debug_lines::{DebugLines, DebugLinesPlugin};
 use bitflags::bitflags;
 use ezinput::prelude::*;
@@ -30,7 +30,6 @@ pub struct Teleport;
 #[derive(Component, Default)]
 pub struct Floor {
     direction: u8,
-    _rotating: bool,
 }
 
 #[derive(Component, Default)]
@@ -56,8 +55,6 @@ struct CubeBundle {
     pbr_bundle: PbrBundle,
     cube: Cube,
     marker: FallingGameComponent,
-    collision_shape: CollisionShape,
-    collision_layers: CollisionLayers,
 }
 
 #[derive(Bundle, Default)]
@@ -68,11 +65,14 @@ struct TeleportBundle {
     marker: FallingGameComponent,
     collision_shape: CollisionShape,
     collision_layers: CollisionLayers,
+    rigid_body: RigidBody,
 }
 
 #[derive(Component, Clone)]
 pub(crate) struct Actor {
     health: f32,
+    velocity: f32,
+    scream_last_play: Option<std::time::Instant>,
 }
 
 #[derive(Bundle)]
@@ -108,7 +108,11 @@ fn new_actor_bundle() -> ActorBundle {
         collision_layers_teleport: CollisionLayers::none()
             .with_group(Layer::Player)
             .with_masks(&[Layer::World, Layer::Teleport]),
-        actor: Actor { health: 100.0 },
+        actor: Actor {
+            scream_last_play: None,
+            health: 100.0,
+            velocity: 0.0,
+        },
         rotation_constraints: RotationConstraints::lock(),
         marker: FallingGameComponent,
     };
@@ -193,6 +197,7 @@ fn sys_spawn_teleport(
             },
             marker: FallingGameComponent,
             teleport: Teleport,
+            rigid_body: RigidBody::Static,
             collision_shape: CollisionShape::Sphere { radius: 8.5 },
             collision_layers: CollisionLayers::new(Layer::Teleport, Layer::Player),
         })
@@ -210,7 +215,7 @@ fn sys_spawn_teleport(
         });
 }
 
-fn sys_spawn_game_cubes(
+fn sys_spawn_game_spheres(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -252,29 +257,32 @@ fn sys_spawn_game_cubes(
         let x = f32::sin(angle) * radius;
         let z = f32::cos(angle) * radius;
 
+        let mesh = meshes.add(Mesh::from(shape::UVSphere {
+            sectors: 128,
+            stacks: 64,
+            ..default()
+        }));
+
         commands
             .spawn_bundle(CubeBundle {
                 cube: Cube {
                     cube_type: cube_type,
                 },
                 pbr_bundle: PbrBundle {
-                    mesh: meshes.add(Mesh::from(shape::Cube { size: 1.6 })),
+                    mesh: mesh,
                     material: material.clone(),
-                    transform: Transform::from_xyz(x, y, z),
+                    transform: Transform::from_xyz(x, y, z).with_scale(Vec3::splat(1.0)),
                     ..default()
                 },
                 ..default()
             })
-            .insert(CollisionShape::Cuboid {
-                half_extends: Vec3::ONE,
-                border_radius: None,
-            })
-            // .insert(RigidBody::Sensor)
+            .insert(CollisionShape::Sphere { radius: 1.0 })
             .insert(
                 CollisionLayers::none()
                     .with_group(Layer::World)
                     .with_masks(&[Layer::Player]),
-            );
+            )
+            .insert(RigidBody::Sensor);
     }
 }
 
@@ -343,7 +351,6 @@ fn sys_spawn_environment(
                 });
             })
             .insert(Floor {
-                _rotating: true,
                 direction: (j % (2 as u16)) as u8,
             })
             .insert(FallingGameComponent);
@@ -413,21 +420,35 @@ fn sys_animate_environment(
     }
 }
 
-fn sys_adjust_health(
+fn sys_adjust_actor_stats(
     mut query_actor: Query<(&Velocity, &mut Actor)>,
     mut app_state: ResMut<State<AppState>>,
     audio: Res<Audio>,
-    // asset_server: Res<AssetServer>,
+    asset_server: Res<AssetServer>,
 ) {
     for (v, mut a) in query_actor.iter_mut() {
         let abs_speed = f32::abs(v.linear.y);
 
         if abs_speed <= 100.0 {
             audio.set_playback_rate(abs_speed / 100.);
+        } else {
+            audio.set_playback_rate(1.0);
         }
+
+        a.velocity = (a.velocity + v.linear.y) / 2.0;
 
         if f32::abs(v.linear.y) > 100.0 {
             a.health -= abs_speed / 100.0 / 3.0;
+
+            if a.scream_last_play.is_none()
+                || (a.scream_last_play.is_some()
+                    && a.scream_last_play.unwrap().elapsed().as_secs() > 2)
+            {
+                if a.health < 100.0 {
+                    audio.play(asset_server.load("music/aaa-1.mp3"));
+                    a.scream_last_play = Some(std::time::Instant::now());
+                }
+            }
         }
 
         if a.health <= 0.0 {
@@ -739,49 +760,61 @@ fn sys_check_game_cube_collision(
     query_cubes: Query<(Entity, &Transform, &Cube), Without<Actor>>,
     audio: Res<Audio>,
     asset_server: Res<AssetServer>,
+    mut collision_events: EventReader<CollisionEvent>,
 ) {
-    let actor_position = query_actor
-        .iter()
-        .map(|(t, _, _)| t)
-        .last()
-        .unwrap()
-        .translation;
+    fn is_player(layers: CollisionLayers) -> bool {
+        layers.contains_group(Layer::Player) && !layers.contains_group(Layer::World)
+    }
 
-    let cube = query_cubes
+    fn is_world(layers: CollisionLayers) -> bool {
+        !layers.contains_group(Layer::Player) && layers.contains_group(Layer::World)
+    }
+
+    let collision = collision_events
         .iter()
-        .filter(|(e, t, c)| {
-            if c.cube_type == CubeType::Environment {
-                return false;
+        .filter_map(|event| {
+            let (entity_1, entity_2) = event.rigid_body_entities();
+            let (layers_1, layers_2) = event.collision_layers();
+
+            if is_player(layers_1) && is_world(layers_2) {
+                Some(entity_2)
+            } else if is_player(layers_2) && is_world(layers_1) {
+                Some(entity_1)
+            } else {
+                None
             }
-
-            let delta = t.translation.distance(actor_position);
-
-            return delta <= 1.5;
         })
-        .map(|(e, t, c)| return c)
         .last();
 
-    if cube.is_none() {
-        return;
-    }
+    let actor = query_actor.iter().map(|(_, _, a)| a).last().unwrap();
+    if collision.is_some() {
+        let cube = query_cubes
+            .iter()
+            .filter(|(e, _, _)| *e == collision.unwrap())
+            .map(|(_, _, c)| c)
+            .last()
+            .unwrap();
 
-    for (mut t, mut v, mut a) in query_actor.iter_mut() {
-        match cube.unwrap().cube_type {
-            CubeType::Brake => {
-                v.linear.y += 50.0;
+        for (_, mut v, mut a) in query_actor.iter_mut() {
+            commands.entity(collision.unwrap()).despawn_recursive();
+
+            match cube.cube_type {
+                CubeType::Brake => {
+                    a.velocity += 20.0;
+                }
+                CubeType::Health => {
+                    a.health += 20.0;
+                }
+                CubeType::Speed => {
+                    a.velocity -= 40.0;
+                }
+                _ => {}
             }
-            CubeType::Speed => {
-                v.linear.y += -50.0;
-            }
-            CubeType::Health => {
-                a.health += 10.0;
-            }
-            _ => {}
+
+            v.linear.y = a.velocity;
+            audio.play(asset_server.load("music/box-hit.mp3"));
         }
     }
-
-    audio.set_playback_rate(1.0);
-    audio.play(asset_server.load("music/box-hit.mp3"));
 }
 
 fn sys_scene_change(
@@ -812,7 +845,7 @@ fn sys_scene_change(
             despawn_game_cubes();
 
             commands.insert_resource(ClearColor(Color::rgb(1.0, 1.0, 1.0)));
-            sys_spawn_game_cubes(commands, meshes, materials);
+            sys_spawn_game_spheres(commands, meshes, materials);
 
             for (_, mut v, _) in query_cube.iter_mut() {
                 v.is_visible = false;
@@ -821,7 +854,7 @@ fn sys_scene_change(
         4 => {
             despawn_game_cubes();
             commands.insert_resource(ClearColor(Color::rgb(0.0, 0.1, 0.1)));
-            sys_spawn_game_cubes(commands, meshes, materials);
+            sys_spawn_game_spheres(commands, meshes, materials);
             audio.stop();
             audio.play_looped(asset_server.load("music/falling-2.mp3"));
 
@@ -841,7 +874,7 @@ fn sys_scene_change(
         6 => {
             despawn_game_cubes();
             commands.insert_resource(ClearColor(Color::rgb(0.8, 0.8, 0.8)));
-            sys_spawn_game_cubes(commands, meshes, materials);
+            sys_spawn_game_spheres(commands, meshes, materials);
 
             let mut counter = 0;
             for (_, mut v, _) in query_cube.iter_mut() {
@@ -890,8 +923,8 @@ fn sys_mouse_cursor_ungrab(
 input! {
     EnumeratedBinding {
         Movement<EnumeratedMovementBinding> {
-            Vertical = [KeyCode::W, KeyCode::S => -1., MouseAxisType::Y],
-            Horizontal = [KeyCode::A => -1. /* default axis value */, KeyCode::D, MouseAxisType::X],
+            Vertical = [MouseAxisType::Y],
+            Horizontal = [MouseAxisType::X],
         }
     }
 }
@@ -917,7 +950,7 @@ impl Default for PlayerBundle {
     }
 }
 
-fn check_input(
+fn sys_mouse_control(
     query: Query<&EnumeratedInputView, With<Player>>,
     mut player_movement_q: Query<&mut Transform, With<Actor>>,
 ) {
@@ -926,17 +959,17 @@ fn check_input(
 
     let view = query.single();
 
-    let mut x = 0.0;
-    let mut y = 0.0;
+    let mut x: f32 = 0.0;
+    let mut y: f32 = 0.0;
 
     if let Some(axis) = view.axis(&Movement(Horizontal)).first() {
         if axis.pressed() {
-            x = axis.value;
+            x = -axis.value;
         }
     }
     if let Some(axis) = view.axis(&Movement(Vertical)).first() {
         if axis.pressed() {
-            y = axis.value;
+            y = -axis.value;
         }
     }
 
@@ -944,18 +977,13 @@ fn check_input(
         return;
     }
 
-    x = (x - 1280.0 / 2.) / 1280.0 * 1.77;
-    y = (720.0 / 2. - y) / 720.0;
-
-    let angle = f32::atan2(y, x);
-    let radius = f32::min((x.powf(2.0) + y.powf(2.0)).sqrt(), 1.0) * RADIUS;
-
-    let x = f32::cos(angle) * radius;
-    let y = f32::sin(angle) * radius;
+    let angle = 2.0 * (x - 1280.0 / 2.) / 1280.0 * std::f32::consts::PI;
+    let radius = -(y + 720.0 / 2.) / 720.0 * RADIUS * 2.0;
 
     for mut t in player_movement_q.iter_mut() {
-        t.translation.x = x;
-        t.translation.z = y;
+        t.rotation = Quat::from_rotation_y(angle);
+        t.translation.x = radius * f32::sin(angle);
+        t.translation.z = radius * f32::cos(angle);
     }
 }
 
@@ -966,38 +994,36 @@ impl Plugin for FallingMinigamePlugin {
         app.add_plugin(PhysicsPlugin::default())
             .add_plugin(EZInputPlugin::<EnumeratedBinding>::default())
             .add_plugin(DebugLinesPlugin::with_depth_test(true))
-            .insert_resource(Gravity::from(Vec3::new(0.0, -9.81, 0.0)));
-
-        app.insert_resource(FallingState { cycle_number: 0 });
-
-        app.add_system_set(
-            SystemSet::on_update(AppState::InGame)
-                .with_system(sys_animate_environment)
-                .with_system(sys_update_hud)
-                .with_system(sys_keyboard_control)
-                .with_system(sys_check_teleport_collision)
-                .with_system(sys_scene_change)
-                .with_system(sys_check_game_cube_collision)
-                .with_system(check_input),
-        )
-        .add_system_set(
-            SystemSet::new()
-                .with_run_criteria(FixedTimestep::step(0.05))
-                .with_system(sys_adjust_health),
-        )
-        .add_system_set(
-            SystemSet::on_enter(AppState::InGame)
-                .with_system(sys_spawn_game_cubes)
-                .with_system(sys_spawn_player)
-                .with_system(sys_draw_hud)
-                .with_system(sys_spawn_environment)
-                .with_system(sys_spawn_teleport)
-                .with_system(sys_mouse_cursor_grab),
-        )
-        .add_system_set(
-            SystemSet::on_exit(AppState::InGame)
-                .with_system(sys_clear_entities)
-                .with_system(sys_mouse_cursor_ungrab),
-        );
+            .insert_resource(Gravity::from(Vec3::new(0.0, -9.81, 0.0)))
+            .insert_resource(FallingState { cycle_number: 0 })
+            .add_system_set(
+                SystemSet::on_update(AppState::InGame)
+                    .with_system(sys_animate_environment)
+                    .with_system(sys_update_hud)
+                    .with_system(sys_keyboard_control)
+                    .with_system(sys_check_teleport_collision)
+                    .with_system(sys_scene_change)
+                    .with_system(sys_check_game_cube_collision)
+                    .with_system(sys_mouse_control),
+            )
+            .add_system_set(
+                SystemSet::new()
+                    .with_run_criteria(FixedTimestep::step(0.05))
+                    .with_system(sys_adjust_actor_stats),
+            )
+            .add_system_set(
+                SystemSet::on_enter(AppState::InGame)
+                    .with_system(sys_spawn_game_spheres)
+                    .with_system(sys_spawn_player)
+                    .with_system(sys_draw_hud)
+                    .with_system(sys_spawn_environment)
+                    .with_system(sys_spawn_teleport)
+                    .with_system(sys_mouse_cursor_grab),
+            )
+            .add_system_set(
+                SystemSet::on_exit(AppState::InGame)
+                    .with_system(sys_clear_entities)
+                    .with_system(sys_mouse_cursor_ungrab),
+            );
     }
 }
