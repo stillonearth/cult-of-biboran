@@ -3,4 +3,5 @@ pub(crate) enum AppState {
     MainMenu,
     InGame,
     GameOver,
+    CutScene,
 }

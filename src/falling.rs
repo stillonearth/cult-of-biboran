@@ -867,7 +867,7 @@ fn sys_check_game_cube_collision(
 
             match cube.cube_type {
                 CubeType::Brake => {
-                    a.velocity += 20.0;
+                    a.velocity += 40.0;
                 }
                 CubeType::Health => {
                     a.health += 20.0;

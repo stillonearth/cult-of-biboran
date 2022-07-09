@@ -5,6 +5,8 @@ use bevy_prototype_debug_lines::DebugLinesPlugin;
 
 use crate::app_states::*;
 use crate::bloodfield::*;
+use crate::cutscene::CutscenePlugin;
+use crate::cutscene::CutsceneSettings;
 use rand::Rng;
 
 // Components
@@ -245,7 +247,7 @@ fn sys_button_new_game(
             Interaction::Clicked => {
                 audio.play(asset_server.load("music/click.mp3"));
                 *color = PRESSED_BUTTON.into();
-                app_state.set(AppState::InGame).unwrap();
+                app_state.set(AppState::CutScene).unwrap();
             }
             Interaction::Hovered => {
                 audio.play(asset_server.load("music/hover.mp3"));
@@ -344,6 +346,12 @@ impl Plugin for MainMenuPlugin {
                     .with_system(sys_setup_camera)
                     .with_system(sys_spawn_circle_of_cubes),
             )
-            .add_system_set(SystemSet::on_exit(AppState::MainMenu).with_system(sys_clear_entities));
+            .add_system_set(SystemSet::on_exit(AppState::MainMenu).with_system(sys_clear_entities))
+            .add_plugin(CutscenePlugin)
+            .insert_resource(CutsceneSettings {
+                cutscene_number: 0,
+                next_stage: 0,
+                next_state: 1,
+            });
     }
 }

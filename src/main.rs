@@ -4,6 +4,7 @@ use bevy_kira_audio::AudioPlugin;
 
 mod app_states;
 mod bloodfield;
+mod cutscene;
 mod falling;
 mod game_over;
 mod indoctrination;
