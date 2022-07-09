@@ -39,5 +39,4 @@ fn spawn(mut commands: Commands) {
 enum Layer {
     World,
     Player,
-    Enemies,
 }

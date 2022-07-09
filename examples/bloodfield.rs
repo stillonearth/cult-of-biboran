@@ -40,28 +40,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(BloodfieldPlugin)
         .add_plugin(WorldInspectorPlugin::new())
-        .add_startup_system(spawn_cube)
         .run();
-}
-
-fn spawn_cube(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<BloodfieldMaterial>>,
-) {
-    // cube
-    // commands.spawn().insert_bundle(Material2dMeshBundle {
-    //     mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
-    //     transform: Transform::from_xyz(0.0, 0.5, 0.0),
-    //     material: materials.add(BloodfieldMaterial { ..default() }),
-    //     ..default()
-    // });
-
-    // // camera
-    // commands.spawn_bundle(PerspectiveCameraBundle {
-    //     transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
-    //     ..default()
-    // });
 }
 
 fn setup(
@@ -69,7 +48,6 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<BloodfieldMaterial>>,
     windows: Res<Windows>,
-    mut done: Local<bool>,
 ) {
     // if !*done {
     println!("Loading Bloodfield");

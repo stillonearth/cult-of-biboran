@@ -134,7 +134,6 @@ fn sys_button_new_game(
 fn sys_clear_entities(
     mut commands: Commands,
     audio: Res<Audio>,
-    // mut app_state: ResMut<State<AppState>>,
     mut main_menu_components: Query<Entity, With<Interface>>,
 ) {
     for e in main_menu_components.iter_mut() {

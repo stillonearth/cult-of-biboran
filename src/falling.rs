@@ -1,12 +1,19 @@
-use crate::app_states::*;
-use bevy::core::FixedTimestep;
-use bevy::prelude::*;
-use bevy_kira_audio::{Audio, InstanceHandle};
-use bevy_prototype_debug_lines::{DebugLines, DebugLinesPlugin};
+use std::time::Duration;
+
+use bevy::core::Stopwatch;
 use bitflags::bitflags;
 use ezinput::prelude::*;
-use heron::*;
 use rand::Rng;
+
+use bevy::core::FixedTimestep;
+use bevy::prelude::*;
+use bevy_kira_audio::Audio;
+use bevy_prototype_debug_lines::{DebugLines, DebugLinesPlugin};
+
+use heron::*;
+
+use crate::app_states::*;
+use crate::indoctrination::*;
 
 // Components
 
@@ -46,6 +53,9 @@ pub struct HealthText;
 
 #[derive(Component, Default)]
 pub struct DistanceText;
+
+#[derive(Component, Default)]
+pub struct StopwatchText;
 
 // Bundles
 
@@ -145,6 +155,7 @@ fn sys_spawn_player(
     asset_server: Res<AssetServer>,
     // mut meshes: ResMut<Assets<Mesh>>,
     // mut materials: ResMut<Assets<StandardMaterial>>,
+    mut stopwatch: ResMut<Stopwatch>,
 ) {
     audio.play_looped(asset_server.load("music/falling-1.mp3"));
 
@@ -166,6 +177,9 @@ fn sys_spawn_player(
 
         parent.spawn_bundle(PlayerBundle::default());
     });
+
+    // Stopwatch
+    stopwatch.reset();
 }
 
 fn sys_spawn_teleport(
@@ -421,6 +435,7 @@ fn sys_animate_environment(
 }
 
 fn sys_adjust_actor_stats(
+    mut commands: Commands,
     mut query_actor: Query<(&Velocity, &mut Actor)>,
     mut app_state: ResMut<State<AppState>>,
     audio: Res<Audio>,
@@ -445,10 +460,15 @@ fn sys_adjust_actor_stats(
                     && a.scream_last_play.unwrap().elapsed().as_secs() > 2)
             {
                 if a.health < 100.0 {
+                    commands.insert_resource(IndoctrinationSettings { enabled: true });
                     audio.play(asset_server.load("music/aaa-1.mp3"));
                     a.scream_last_play = Some(std::time::Instant::now());
+                } else {
+                    commands.insert_resource(IndoctrinationSettings { enabled: false });
                 }
             }
+        } else {
+            commands.insert_resource(IndoctrinationSettings { enabled: false });
         }
 
         if a.health <= 0.0 {
@@ -477,13 +497,17 @@ fn sys_clear_entities(
         commands.entity(e).despawn_recursive();
     }
 
+    commands.insert_resource(IndoctrinationSettings { enabled: false });
+
     // audio.stop();
 }
 
 // HUD
 
 fn sys_draw_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn_bundle(UiCameraBundle::default());
+    commands
+        .spawn_bundle(UiCameraBundle::default())
+        .insert(FallingGameComponent);
 
     let font = asset_server.load("fonts/ARCADECLASSIC.ttf");
     let velocity_text = Text::with_section(
@@ -505,6 +529,19 @@ fn sys_draw_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             font_size: 35.0,
             font: font.clone(),
             color: Color::GREEN,
+        },
+        TextAlignment {
+            horizontal: HorizontalAlign::Center,
+            ..Default::default()
+        },
+    );
+
+    let stopwatch_text = Text::with_section(
+        "",
+        TextStyle {
+            font_size: 35.0,
+            font: font.clone(),
+            color: Color::BLUE,
         },
         TextAlignment {
             horizontal: HorizontalAlign::Center,
@@ -577,25 +614,56 @@ fn sys_draw_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
                     ..Default::default()
                 })
                 .insert(HealthText);
+
+            parent
+                .spawn_bundle(TextBundle {
+                    text: stopwatch_text.clone(),
+                    style: Style {
+                        position_type: PositionType::Absolute,
+                        justify_content: JustifyContent::Center,
+                        position: Rect {
+                            top: Val::Px(510.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .insert(StopwatchText);
         });
 }
 
 pub(crate) fn sys_update_hud(
     player_query: Query<(&Actor, &Velocity)>,
-    mut velocity_text: Query<&mut Text, (With<VelocityText>, Without<HealthText>)>,
-    mut health_text: Query<&mut Text, (With<HealthText>, Without<VelocityText>)>,
+    mut set: ParamSet<(
+        Query<&mut Text, With<VelocityText>>,
+        Query<&mut Text, With<HealthText>>,
+        Query<&mut Text, With<StopwatchText>>,
+    )>,
+    mut stopwatch: ResMut<Stopwatch>,
+    time: Res<Time>,
 ) {
     let player = player_query.iter().last().unwrap();
     let velocity = player.1;
     let actor = player.0;
 
-    for mut text in velocity_text.iter_mut() {
+    stopwatch.tick(Duration::from_secs_f32(time.delta_seconds()));
+
+    for mut text in set.p0().iter_mut() {
         let str = format!("speed   {}", -(velocity.linear.y as i32)).to_string();
         text.sections[0].value = str;
     }
 
-    for mut text in health_text.iter_mut() {
+    for mut text in set.p1().iter_mut() {
         let str = format!("health   {}", (actor.health as i32)).to_string();
+        text.sections[0].value = str;
+    }
+
+    for mut text in set.p2().iter_mut() {
+        let str = format!(
+            "elapsed {} sec",
+            (stopwatch.elapsed_secs() as i32).to_string()
+        );
         text.sections[0].value = str;
     }
 }
@@ -786,7 +854,6 @@ fn sys_check_game_cube_collision(
         })
         .last();
 
-    let actor = query_actor.iter().map(|(_, _, a)| a).last().unwrap();
     if collision.is_some() {
         let cube = query_cubes
             .iter()
@@ -824,8 +891,8 @@ fn sys_scene_change(
     mut query_cube: Query<(Entity, &mut Visibility, &Cube)>,
     audio: Res<Audio>,
     asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<StandardMaterial>>,
 ) {
     if !state.is_changed() {
         return;
@@ -898,21 +965,13 @@ fn sys_scene_change(
 
 // Mouse Control
 
-fn sys_mouse_cursor_grab(
-    mut windows: ResMut<Windows>,
-    btn: Res<Input<MouseButton>>,
-    key: Res<Input<KeyCode>>,
-) {
+fn sys_mouse_cursor_grab(mut windows: ResMut<Windows>) {
     let window = windows.get_primary_mut().unwrap();
     window.set_cursor_lock_mode(true);
     window.set_cursor_visibility(false);
 }
 
-fn sys_mouse_cursor_ungrab(
-    mut windows: ResMut<Windows>,
-    btn: Res<Input<MouseButton>>,
-    key: Res<Input<KeyCode>>,
-) {
+fn sys_mouse_cursor_ungrab(mut windows: ResMut<Windows>) {
     let window = windows.get_primary_mut().unwrap();
     window.set_cursor_lock_mode(false);
     window.set_cursor_visibility(true);
@@ -994,8 +1053,20 @@ impl Plugin for FallingMinigamePlugin {
         app.add_plugin(PhysicsPlugin::default())
             .add_plugin(EZInputPlugin::<EnumeratedBinding>::default())
             .add_plugin(DebugLinesPlugin::with_depth_test(true))
+            .add_plugin(IndoctrinationPlugin)
             .insert_resource(Gravity::from(Vec3::new(0.0, -9.81, 0.0)))
             .insert_resource(FallingState { cycle_number: 0 })
+            .insert_resource(IndoctrinationSettings { enabled: false })
+            .insert_resource(Stopwatch::new())
+            .add_system_set(
+                SystemSet::on_enter(AppState::InGame)
+                    .with_system(sys_spawn_game_spheres)
+                    .with_system(sys_spawn_player)
+                    .with_system(sys_draw_hud)
+                    .with_system(sys_spawn_environment)
+                    .with_system(sys_spawn_teleport)
+                    .with_system(sys_mouse_cursor_grab),
+            )
             .add_system_set(
                 SystemSet::on_update(AppState::InGame)
                     .with_system(sys_animate_environment)
@@ -1010,15 +1081,6 @@ impl Plugin for FallingMinigamePlugin {
                 SystemSet::new()
                     .with_run_criteria(FixedTimestep::step(0.05))
                     .with_system(sys_adjust_actor_stats),
-            )
-            .add_system_set(
-                SystemSet::on_enter(AppState::InGame)
-                    .with_system(sys_spawn_game_spheres)
-                    .with_system(sys_spawn_player)
-                    .with_system(sys_draw_hud)
-                    .with_system(sys_spawn_environment)
-                    .with_system(sys_spawn_teleport)
-                    .with_system(sys_mouse_cursor_grab),
             )
             .add_system_set(
                 SystemSet::on_exit(AppState::InGame)

@@ -6,6 +6,7 @@ mod app_states;
 mod bloodfield;
 mod falling;
 mod game_over;
+mod indoctrination;
 mod main_menu;
 
 fn main() {
