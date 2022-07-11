@@ -12,9 +12,7 @@ pub(crate) struct CutsceneComponent;
 // Resourcesf
 
 pub(crate) struct CutsceneSettings {
-    pub cutscene_number: u8,
     pub next_stage: u8,
-    pub next_state: u8,
 }
 
 // Systems
@@ -37,7 +35,7 @@ pub(crate) fn sys_show_scene(
     settings.next_stage += 1;
 
     if settings.next_stage == 6 {
-        app_state.set(AppState::InGame).unwrap();
+        app_state.set(AppState::FallingGame).unwrap();
         return;
     }
 

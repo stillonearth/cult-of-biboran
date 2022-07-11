@@ -8,11 +8,12 @@ use rand::Rng;
 use bevy::core::FixedTimestep;
 use bevy::prelude::*;
 use bevy_kira_audio::Audio;
-use bevy_prototype_debug_lines::{DebugLines, DebugLinesPlugin};
+use bevy_prototype_debug_lines::DebugLines;
 
 use heron::*;
 
 use crate::app_states::*;
+use crate::game_end::*;
 use crate::indoctrination::*;
 
 // Components
@@ -893,6 +894,7 @@ fn sys_scene_change(
     asset_server: Res<AssetServer>,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<StandardMaterial>>,
+    stopwatch: Res<Stopwatch>,
 ) {
     if !state.is_changed() {
         return;
@@ -907,7 +909,9 @@ fn sys_scene_change(
     };
 
     match state.cycle_number {
-        0 => {}
+        0 => {
+            commands.insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)));
+        }
         2 => {
             despawn_game_cubes();
 
@@ -957,7 +961,10 @@ fn sys_scene_change(
             }
         }
         8 => {
-            app_state.set(AppState::GameOver).unwrap();
+            commands.insert_resource(GameStats {
+                time: stopwatch.elapsed_secs() as u32,
+            });
+            app_state.set(AppState::GameEnd).unwrap();
         }
         _ => {}
     }
@@ -1052,14 +1059,13 @@ impl Plugin for FallingMinigamePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(PhysicsPlugin::default())
             .add_plugin(EZInputPlugin::<EnumeratedBinding>::default())
-            .add_plugin(DebugLinesPlugin::with_depth_test(true))
             .add_plugin(IndoctrinationPlugin)
             .insert_resource(Gravity::from(Vec3::new(0.0, -9.81, 0.0)))
             .insert_resource(FallingState { cycle_number: 0 })
             .insert_resource(IndoctrinationSettings { enabled: false })
             .insert_resource(Stopwatch::new())
             .add_system_set(
-                SystemSet::on_enter(AppState::InGame)
+                SystemSet::on_enter(AppState::FallingGame)
                     .with_system(sys_spawn_game_spheres)
                     .with_system(sys_spawn_player)
                     .with_system(sys_draw_hud)
@@ -1068,7 +1074,7 @@ impl Plugin for FallingMinigamePlugin {
                     .with_system(sys_mouse_cursor_grab),
             )
             .add_system_set(
-                SystemSet::on_update(AppState::InGame)
+                SystemSet::on_update(AppState::FallingGame)
                     .with_system(sys_animate_environment)
                     .with_system(sys_update_hud)
                     .with_system(sys_keyboard_control)
@@ -1083,7 +1089,7 @@ impl Plugin for FallingMinigamePlugin {
                     .with_system(sys_adjust_actor_stats),
             )
             .add_system_set(
-                SystemSet::on_exit(AppState::InGame)
+                SystemSet::on_exit(AppState::FallingGame)
                     .with_system(sys_clear_entities)
                     .with_system(sys_mouse_cursor_ungrab),
             );

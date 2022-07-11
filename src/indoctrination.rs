@@ -117,7 +117,7 @@ pub(crate) fn sys_show_25_frame(
                     .insert(UiFixedZ { z: 101. });
             });
     } else {
-        let mut img = "images/flashback-1.jpg";
+        let img;
 
         if num <= 13 {
             img = "images/flashback-1.jpg";

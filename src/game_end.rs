@@ -10,18 +10,37 @@ pub struct Interface;
 #[derive(Component, Default)]
 pub struct GameOverText;
 
+// Resources
+
+pub struct GameStats {
+    pub time: u32,
+}
+
 // HUD
 
-fn sys_draw_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn sys_draw_hud(mut commands: Commands, asset_server: Res<AssetServer>, stats: Res<GameStats>) {
     commands.spawn_bundle(UiCameraBundle::default());
 
     commands.insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)));
 
     let font = asset_server.load("fonts/ARCADECLASSIC.ttf");
     let game_over_text = Text::with_section(
-        "game over",
+        format!("FINISHED  IN  {}  SECONDS", stats.time),
         TextStyle {
             font_size: 65.0,
+            font: font.clone(),
+            color: Color::WHITE,
+        },
+        TextAlignment {
+            horizontal: HorizontalAlign::Center,
+            ..Default::default()
+        },
+    );
+
+    let credits_text = Text::with_section(
+        "artwork  by  biboran  artists\na  theme  for  a  murder  font  by  Livin  Hell\nARCADE  font  by  anonymous\nDichotomy  and  Absolom  tracks  by  Electric  Senses\nMade  on  Bevy  with  Rust",
+        TextStyle {
+            font_size: 12.0,
             font: font.clone(),
             color: Color::WHITE,
         },
@@ -65,6 +84,22 @@ fn sys_draw_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .insert(GameOverText);
 
             parent
+                .spawn_bundle(TextBundle {
+                    text: credits_text.clone(),
+                    style: Style {
+                        position_type: PositionType::Absolute,
+                        justify_content: JustifyContent::Center,
+                        position: Rect {
+                            top: Val::Px(650.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .insert(GameOverText);
+
+            parent
                 .spawn_bundle(ButtonBundle {
                     style: Style {
                         size: Size::new(Val::Px(170.0), Val::Px(65.0)),
@@ -86,7 +121,7 @@ fn sys_draw_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .with_children(|parent| {
                     parent.spawn_bundle(TextBundle {
                         text: Text::with_section(
-                            "CONFESS",
+                            "START OVER",
                             TextStyle {
                                 font: asset_server.load("fonts/ARCADECLASSIC.TTF"),
                                 font_size: 20.0,
@@ -145,13 +180,13 @@ fn sys_clear_entities(
 
 // Plugins
 
-pub struct GameOverScreenPlugin;
-impl Plugin for GameOverScreenPlugin {
+pub struct GameEndPlugin;
+impl Plugin for GameEndPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system_set(SystemSet::on_enter(AppState::GameOver).with_system(sys_draw_hud))
-            .add_system_set(SystemSet::on_exit(AppState::GameOver).with_system(sys_clear_entities))
+        app.add_system_set(SystemSet::on_enter(AppState::GameEnd).with_system(sys_draw_hud))
+            .add_system_set(SystemSet::on_exit(AppState::GameEnd).with_system(sys_clear_entities))
             .add_system_set(
-                SystemSet::on_update(AppState::GameOver).with_system(sys_button_new_game),
+                SystemSet::on_update(AppState::GameEnd).with_system(sys_button_new_game),
             );
     }
 }
