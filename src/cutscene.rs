@@ -41,7 +41,7 @@ pub(crate) fn sys_show_scene(
 
     let mut cutscene_items: Vec<(String, String)> = Vec::new();
     cutscene_items.push((
-        "And there was God\nAnd there was Satan".to_string(),
+        "And there was God, and there was Satan,\n and there were humans\n, and there were non-humans\n, and there was\n Alexander Gavrilovich Abdulov.".to_string(),
         "images/story/1.png".to_string(),
     ));
     cutscene_items.push((
@@ -86,62 +86,18 @@ pub(crate) fn sys_show_scene(
     );
 
     let img = &cutscene_items[(settings.next_stage - 1) as usize].1;
-
-    commands
-        .spawn_bundle(NodeBundle {
-            color: Color::BLACK.into(),
-            style: Style {
-                position_type: PositionType::Absolute,
-                position: Rect {
-                    left: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    ..default()
-                },
-                size: Size {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                },
-                align_self: AlignSelf::FlexEnd,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..Default::default()
-            },
-            visibility: Visibility { is_visible: false },
-            ..Default::default()
-        })
-        .insert(CutsceneComponent)
-        .with_children(|parent| {
-            parent.spawn_bundle(ImageBundle {
-                style: Style {
-                    size: Size {
-                        width: Val::Auto,
-                        height: Val::Px(720.0),
-                    },
-                    position_type: PositionType::Absolute,
-                    align_self: AlignSelf::Center,
-                    ..Default::default()
-                },
-                image: asset_server.load(img).into(),
-                transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
-                ..Default::default()
-            });
-
-            parent.spawn_bundle(TextBundle {
-                text: text.clone(),
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    justify_content: JustifyContent::Center,
-                    ..Default::default()
-                },
-                ..Default::default()
-            });
-        });
 }
 
-fn sys_clear(mut commands: Commands, mut query: Query<Entity, With<CutsceneComponent>>) {
+fn sys_clear(
+    mut commands: Commands,
+    mut query: Query<Entity, With<CutsceneComponent>>,
+    // audio: Res<Audio>,
+) {
     for q in query.iter_mut() {
         commands.entity(q).despawn_recursive();
     }
+
+    // audio.stop();
 }
 
 // Plugins

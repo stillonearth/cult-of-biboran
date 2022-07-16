@@ -44,6 +44,9 @@ pub struct Floor {
 pub struct FallingGameComponent;
 
 #[derive(Component, Default)]
+pub struct Chain;
+
+#[derive(Component, Default)]
 pub struct Interface;
 
 #[derive(Component, Default)]
@@ -304,6 +307,7 @@ fn sys_spawn_game_spheres(
 fn sys_spawn_environment(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Spawn Circle of Cubes
@@ -370,6 +374,23 @@ fn sys_spawn_environment(
             })
             .insert(FallingGameComponent);
     }
+
+    // spawn chain
+
+    let model_handle = asset_server.load("models/scene.gltf#Mesh0/Primitive0");
+
+    let transform = Transform::from_xyz(1500., -1000.0, -1500.)
+        .with_rotation(Quat::from_rotation_y(std::f32::consts::PI / 4.))
+        .with_scale(Vec3::new(100.0, 100.0, 100.0));
+
+    commands
+        .spawn_bundle(PbrBundle {
+            mesh: model_handle.clone(),
+            transform: transform,
+            material: materials.add(Color::WHITE.into()),
+            ..default()
+        })
+        .insert(Chain);
 }
 
 fn sys_animate_environment(
@@ -890,6 +911,7 @@ fn sys_scene_change(
     state: Res<FallingState>,
     mut app_state: ResMut<State<AppState>>,
     mut query_cube: Query<(Entity, &mut Visibility, &Cube)>,
+    mut query_chain: Query<(Entity, &Chain)>,
     audio: Res<Audio>,
     asset_server: Res<AssetServer>,
     meshes: ResMut<Assets<Mesh>>,
@@ -905,6 +927,10 @@ fn sys_scene_change(
             if c.cube_type != CubeType::Environment {
                 commands.entity(e).despawn_recursive();
             }
+        }
+
+        for (e, _) in query_chain.iter_mut() {
+            commands.entity(e).despawn();
         }
     };
 

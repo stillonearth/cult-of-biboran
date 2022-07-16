@@ -54,8 +54,9 @@ pub fn sys_spawn_circle_of_cubes(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut bmaterials: ResMut<Assets<BloodfieldMaterial>>,
     asset_server: Res<AssetServer>,
+    audio: Res<Audio>,
 ) {
-    // audio.play_looped(asset_server.load("music/biboran.mp3"));
+    audio.play_looped(asset_server.load("music/biboran.mp3"));
 
     let texture_handle = asset_server.load("images/abdulovhell.jpg");
 
@@ -246,7 +247,7 @@ fn sys_button_new_game(
             Interaction::Clicked => {
                 audio.play(asset_server.load("music/click.mp3"));
                 *color = PRESSED_BUTTON.into();
-                app_state.set(AppState::CutScene).unwrap();
+                app_state.set(AppState::FallingGame).unwrap();
             }
             Interaction::Hovered => {
                 audio.play(asset_server.load("music/hover.mp3"));

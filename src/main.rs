@@ -19,7 +19,7 @@ fn main() {
         // External plugins
         .add_plugins(DefaultPlugins)
         .add_plugin(AudioPlugin)
-        .add_plugin(WorldInspectorPlugin::new())
+        // .add_plugin(WorldInspectorPlugin::new())
         .add_plugin(DebugLinesPlugin::with_depth_test(true))
         // Main menu
         .add_plugin(main_menu::MainMenuPlugin)
